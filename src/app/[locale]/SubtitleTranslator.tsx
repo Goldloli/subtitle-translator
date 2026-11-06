@@ -31,7 +31,7 @@ import {
 } from "@/app/lib/translation/formats/subtitle";
 import { LLM_MODELS } from "@/app/lib/translation";
 import { transformSkippingSoftFilled, collectEmptiedSlots } from "@/app/lib/translation/softFill";
-import { delay } from "@/app/lib/translation/retry";
+import { delay, selectBatchRetryFiles } from "@/app/lib/translation/retry";
 import LanguageSelector from "@/app/components/LanguageSelector";
 import { useLanguageOptions } from "@/app/components/languages";
 import ApiStatusBlock from "@/app/components/ApiStatusBlock";
@@ -818,7 +818,18 @@ const SubtitleTranslator = () => {
         failedLangs={failedLangs}
         reason={failedReason}
         disabled={isTranslating}
-        onRetry={() => runRetry(() => (uploadMode === "single" ? runTranslation(performTranslation, sourceText, contextAware ? "subtitle" : undefined) : runBatchTranslation(performTranslation, multipleFiles, readFile, tSubtitle("noFileUploaded"))))}
+        onRetry={() =>
+          runRetry(() => {
+            if (uploadMode === "single") {
+              runTranslation(performTranslation, sourceText, contextAware ? "subtitle" : undefined);
+              return;
+            }
+            // 只重跑有失败行的文件(#88):整批重跑会让导出目录攒出全量 `x (1).srt`
+            // 副本。退回全量的兜底条件与理由见 selectBatchRetryFiles。
+            const filesToRetry = selectBatchRetryFiles(multipleFiles, failedLines);
+            runBatchTranslation(performTranslation, filesToRetry, readFile, tSubtitle("noFileUploaded"));
+          })
+        }
       />
 
       {/* Results Section */}

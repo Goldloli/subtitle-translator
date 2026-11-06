@@ -32,6 +32,25 @@ export interface UserRetryConfig {
   retryCount?: number;
 }
 
+/**
+ * 批量「重试失败行」要重跑的文件子集(#88)。失败面板的重试入口曾把整批
+ * multipleFiles 原样喂回 runBatchTranslation —— 干净文件虽走缓存不再发请求,
+ * 但每个文件的导出照常落盘,导出目录会整批攒出 `x (1).srt` 副本,用户看到
+ * 的是「整个文件列表翻倍」而不是只补失败的那几个文件。失败行由管线统一带
+ * `file` 标签(pipeline.ts 各 failures.push 的 `meta?.fileName`),这里按标签
+ * 把重跑收敛到【真有失败行】的文件;标签缺失、或一个都对不上(异常路径,
+ * 如文件在重试前被移出列表)时退回全量 —— 宁可重复也不漏掉重试。
+ */
+export const selectBatchRetryFiles = <T extends { name: string }>(
+  files: readonly T[],
+  failedLines: readonly { file?: string }[],
+): T[] => {
+  const failedFileNames = new Set(failedLines.map((line) => line.file).filter((name): name is string => !!name));
+  if (failedFileNames.size === 0) return [...files];
+  const selected = files.filter((file) => failedFileNames.has(file.name));
+  return selected.length > 0 ? selected : [...files];
+};
+
 // Extract status and message from error once, reuse across checks
 const getErrorInfo = (error: unknown): { status: number | undefined; message: string } => ({
   status: (error as { status?: number })?.status,
